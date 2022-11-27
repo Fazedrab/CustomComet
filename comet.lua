@@ -208,7 +208,7 @@ runcode(function()
     local CurrentAnim = {["Value"] = "Slow"}
     local Enabled = false
     local KillAura = Tabs["Combat"]:CreateToggle({
-        ["Name"] = "Aura",
+        ["Name"] = "1TapKillAura",
         ["Callback"] = function(Callback)
             Enabled = Callback
             if Enabled then
@@ -345,7 +345,166 @@ runcode(function()
         end
     })
 end)
+runcode(function()
+    local BedwarsSwords = require(game:GetService("ReplicatedStorage").TS.games.bedwars["bedwars-swords"]).BedwarsSwords
+    function hashFunc(vec) 
+        return {value = vec}
+    end
+    local function GetInventory(plr)
+        if not plr then 
+            return {items = {}, armor = {}}
+        end
 
+        local suc, ret = pcall(function() 
+            return require(game:GetService("ReplicatedStorage").TS.inventory["inventory-util"]).InventoryUtil.getInventory(plr)
+        end)
+
+        if not suc then 
+            return {items = {}, armor = {}}
+        end
+
+        if plr.Character and plr.Character:FindFirstChild("InventoryFolder") then 
+            local invFolder = plr.Character:FindFirstChild("InventoryFolder").Value
+            if not invFolder then return ret end
+            for i,v in next, ret do 
+                for i2, v2 in next, v do 
+                    if typeof(v2) == 'table' and v2.itemType then
+                        v2.instance = invFolder:FindFirstChild(v2.itemType)
+                    end
+                end
+                if typeof(v) == 'table' and v.itemType then
+                    v.instance = invFolder:FindFirstChild(v.itemType)
+                end
+            end
+        end
+
+        return ret
+    end
+    local function getSword()
+        local highest, returning = -9e9, nil
+        for i,v in next, GetInventory(lplr).items do 
+            local power = table.find(BedwarsSwords, v.itemType)
+            if not power then continue end
+            if power > highest then 
+                returning = v
+                highest = power
+            end
+        end
+        return returning
+    end
+    local Anims = {
+        ["Slow"] = {
+            {CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(220), math.rad(100), math.rad(100)),Time = 0.25},
+            {CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0)),Time = 0.25},
+        },
+        ["Weird"] = {
+            {CFrame = CFrame.new(0, 0, 1.5) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0)),Time = 0.25},
+            {CFrame = CFrame.new(0, 0, -1.5) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0)),Time = 0.25},
+            {CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0)),Time = 0.25},
+        },
+    }
+    local VMAnim = false
+    local HitRemote = Client:Get(bedwars["SwordRemote"])
+    local origC0 = game:GetService("ReplicatedStorage").Assets.Viewmodel.RightHand.RightWrist.C0
+    local DistVal = {["Value"] = 25}
+    local AttackAnim = {["Enabled"] = true}
+    local UseMultiAura = {["Enabled"] = true}
+    local CurrentAnim = {["Value"] = "Slow"}
+    local Enabled = false
+    local KillAura = Tabs["Blatant"]:CreateToggle({
+        ["Name"] = "BetterKillAura",
+        ["Callback"] = function(Callback)
+            Enabled = Callback
+            if Enabled then
+                spawn(function()
+                    local constants = require(game:GetService("ReplicatedStorage").TS.games.bedwars.items["paint-shotgun"]["paint-shotgun-constants"]).PaintShotgunConstants
+                    constants.COOLDOWN = 0.001
+                end)
+                spawn(function()
+                    repeat task.wait() until GetMatchState() ~= 0
+                    if not Enabled then return end
+                    while task.wait(0.1) do
+                        if not Enabled then return end
+                        for i,v in pairs(game:GetService("Players"):GetChildren()) do
+                            if v.Team ~= lplr.Team and IsAlive(v) and not v.Character:FindFirstChildOfClass("ForceField") then
+                                local mag = (v.Character:FindFirstChild("HumanoidRootPart").Position - lplr.Character:FindFirstChild("HumanoidRootPart").Position).Magnitude
+                                if mag < DistVal["Value"] then
+                                    local sword = getSword()
+                                    spawn(function()
+                                        if AttackAnim["Enabled"] then
+                                            local anim = Instance.new("Animation")
+                                            anim.AnimationId = "rbxassetid://4947108314"
+                                            local loader = lplr.Character:FindFirstChild("Humanoid"):FindFirstChild("Animator")
+                                            loader:LoadAnimation(anim):Play()
+                                            if not VMAnim then
+                                                VMAnim = true
+                                                for i,v in pairs(Anims[CurrentAnim["Value"]]) do
+                                                    game:GetService("TweenService"):Create(cam.Viewmodel.RightHand.RightWrist,TweenInfo.new(v.Time),{C0 = origC0 * v.CFrame}):Play()
+                                                    task.wait(v.Time-0.01)
+                                                end
+                                                VMAnim = false
+                                            end
+                                        end
+                                    end)
+                                    if sword ~= nil then
+                                        HitRemote:SendToServer({
+                                            ["weapon"] = sword.tool,
+                                            ["entityInstance"] = v.Character,
+                                            ["validate"] = {
+                                                ["raycast"] = {
+                                                    ["cameraPosition"] = hashFunc(cam.CFrame.Position), 
+                                                    ["cursorDirection"] = hashFunc(Ray.new(cam.CFrame.Position, v.Character:FindFirstChild("HumanoidRootPart").Position).Unit.Direction)
+                                                },
+                                                ["targetPosition"] = hashFunc(v.Character:FindFirstChild("HumanoidRootPart").Position),
+                                                ["selfPosition"] = hashFunc(lplr.Character:FindFirstChild("HumanoidRootPart").Position + ((lplr.Character:FindFirstChild("HumanoidRootPart").Position - v.Character:FindFirstChild("HumanoidRootPart").Position).magnitude > 14 and (CFrame.lookAt(lplr.Character:FindFirstChild("HumanoidRootPart").Position, v.Character:FindFirstChild("HumanoidRootPart").Position).LookVector * 4) or Vector3.new(0, 0, 0))),
+                                            }, 
+                                            ["chargedAttack"] = {["chargeRatio"] = 1},
+                                        })
+                                    end
+                                    if UseMultiAura["Enabled"] then
+                                        local selfpos = lplr.Character and lplr.Character.PrimaryPart and lplr.Character.PrimaryPart.Position or v:FindFirstChild("HumanoidRootPart").Position
+                                        local newpos = v.Character:FindFirstChild("HumanoidRootPart").Position
+                                        Client:Get(bedwars["PaintRemote"]):SendToServer(selfpos, CFrame.lookAt(selfpos, newpos).LookVector)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    })
+    DistVal = KillAura:CreateSlider({
+        ["Name"] = "Range",
+        ["Function"] = function() end,
+        ["Min"] = 0,
+        ["Max"] = 21,
+        ["Default"] = 21,
+        ["Round"] = 1
+    })
+    CurrentAnim = KillAura:CreateDropDown({
+        ["Name"] = "VMAnimation",
+        ["Function"] = function(v) 
+            CurrentAnim["Value"] = v
+        end,
+        ["List"] = {"Slow","Weird"},
+        ["Default"] = "Slow"
+    })
+    AttackAnim = KillAura:CreateOptionTog({
+        ["Name"] = "Animation",
+        ["Default"] = true,
+        ["Func"] = function(v)
+            AttackAnim["Enabled"] = v
+        end
+    })
+    UseMultiAura = KillAura:CreateOptionTog({
+        ["Name"] = "Patched",
+        ["Default"] = true,
+        ["Func"] = function(v)
+            UseMultiAura["Enabled"] = v
+        end
+    })
+end)
  
 runcode(function()
     local Enabled = false
@@ -368,6 +527,95 @@ runcode(function()
         end
     })
 end)
+runcode(function()
+    local AlreadyDetected = {}
+    local Enabled = false
+    local HackerDetector = Tabs["Utility"]:CreateToggle({
+        ["Name"] = "HackerDetector",
+        ["Callback"] = function(Callback)
+            Enabled = Callback
+            if Enabled then
+                spawn(function()
+                    while task.wait(0.5) do
+                        if not Enabled then return end
+                        local Detected = {}
+                        for i,v in pairs(game:GetService("Players"):GetChildren()) do
+                            spawn(function()
+                                if IsAlive(v) then
+                                    local yover = false
+                                    local hrp = v.Character:FindFirstChild("HumanoidRootPart")
+                                    local oldpos
+                                    oldpos = hrp.Position
+                                    task.wait(0.67)
+                                    local mag = (oldpos - hrp.Position).Magnitude
+                                    local magyonly = math.abs(oldpos.Y - hrp.Position.Y)
+                                    if magyonly > 35 and magyonly > 0 then
+                                        CreateNotification("HackerDetector",v.Name.." has been flagged\nFor: Up/Down Fly ("..math.floor(magyonly)..")",5)
+                                        yover = true
+                                    end
+                                    if mag > 25 and yover == false then
+                                        CreateNotification("HackerDetector",v.Name.." has been flagged\nFor: Speed ("..math.floor(mag)..")",5)
+                                    end
+                                elseif IsAlive(v) == false and CanWalk(v) == true then
+                                    CreateNotification("HackerDetector",v.Name.." has been flagged\nFor: DeathDisabler",5)
+                                end
+                            end)
+                        end
+                    end
+                end)
+            end
+        end
+    })
+end)
+
+runcode(function()
+    local Connection
+    local Enabled = false
+    local BetterViewmodel = Tabs["Render"]:CreateToggle({
+        ["Name"] = "BetterViewmodel",
+        ["Callback"] = function(Callback)
+            Enabled = Callback
+            if Enabled then
+                Connection = cam.Viewmodel.ChildAdded:Connect(function(v)
+                    if v:FindFirstChild("Handle") then
+                        pcall(function()
+                            v:FindFirstChild("Handle").Size = v:FindFirstChild("Handle").Size / 1.5
+                            v:FindFirstChild("Handle").Material = Enum.Material.Neon
+                            v:FindFirstChild("Handle").TextureID = ""
+                            v:FindFirstChild("Handle").Color = Color3.fromRGB(255,65,65)
+                        end)
+                        local vname = string.lower(v.Name)
+                        if vname:find("sword") or vname:find("blade") then
+                            v:FindFirstChild("Handle").MeshId = "rbxassetid://11216117592"
+                        elseif vname:find("snowball") then
+                            v:FindFirstChild("Handle").MeshId = "rbxassetid://11216343798"
+                        end
+                    end
+                end)
+            else
+                Connection:Disconnect()
+            end
+        end
+    })
+end)
+
+runcode(function()
+    local old
+    local Enabled = false
+    local NoPingIndicator = Tabs["Render"]:CreateToggle({
+        ["Name"] = "NoPingIndicator",
+        ["Callback"] = function(Callback)
+            Enabled = Callback
+            if Enabled then
+                old = bedwars["PingController"].createIndicator
+                bedwars["PingController"].createIndicator = function() end
+            else
+                bedwars["PingController"].createIndicator = old
+                old = nil
+            end
+        end
+    })
+end)
  
 runcode(function()
     local Value = {["Value"] = 20}
@@ -377,7 +625,7 @@ runcode(function()
         ["Callback"] = function(Callback)
             Enabled = Callback
             if Enabled then
-                bedwars["CombatConstant"].RAYCAST_SWORD_CHARACTER_DISTANCE = Value["Value"] - 0.0001
+                bedwars["CombatConstant"].RAYCAST_SWORD_CHARACTER_DISTANCE = Value["Value"] - 0.001
             else
                 bedwars["CombatConstant"].RAYCAST_SWORD_CHARACTER_DISTANCE = 30
             end
@@ -389,6 +637,95 @@ runcode(function()
         ["Min"] = 1,
         ["Max"] = 30,
         ["Default"] = 30,
+    })
+end)
+runcode(function()
+    local velo
+    local Enabled = false
+    local Mode = {["Value"] = "Moonsoon"}
+    local Fly = Tabs["Blatant"]:CreateToggle({
+        ["Name"] = "BetterFly",
+        ["Callback"] = function(Callback)
+            Enabled = Callback
+            if Enabled then
+                spawn(function()
+                    velo = Instance.new("BodyVelocity")
+                    velo.MaxForce = Vector3.new(0,9e9,0)
+                    velo.Parent = lplr.Character:FindFirstChild("HumanoidRootPart")
+                    spawn(function()
+                        while task.wait() do
+                            if not Enabled then return end
+                            if Mode["Value"] == "Long" then
+                                for i = 1,7 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,i*1.25,0)
+                                end
+                                for i = 1,7 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,-i*1,0)
+                                end
+                            elseif Mode["Value"] == "FunnyOld" then
+                                for i = 1,15 do
+                                    task.wait(0.01)
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,i*1,0)
+                                end
+                            elseif Mode["Value"] == "Funny" then
+                                for i = 2,30,2 do
+                                    task.wait(0.01)
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,25 + i,0)
+                                end
+                            elseif Mode["Value"] == "Moonsoon" then
+                                for i = 1,10 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,-i*0.7,0)
+                                end
+                            elseif Mode["Value"] == "Bounce" then
+                                for i = 1,15 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,i*1.25,0)
+                                end
+                                for i = 1,15 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,-i*1,0)
+                                end
+                            elseif Mode["Value"] == "Bounce2" then
+                                for i = 1,15 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,i*1.25,0)
+                                end
+                                velo.Velocity = Vector3.new(0,0,0)
+                                task.wait(0.05)
+                                for i = 1,15 do
+                                    task.wait()
+                                    if not Enabled then return end
+                                    velo.Velocity = Vector3.new(0,-i*1,0)
+                                end
+                                task.wait(0.05)
+                                velo.Velocity = Vector3.new(0,0,0)
+                            end
+                        end
+                    end)
+                end)
+            else
+                velo:Destroy()
+            end
+        end
+    })
+    Mode = Fly:CreateDropDown({
+        ["Name"] = "Mode",
+        ["Function"] = function(v) 
+            Mode["Value"] = v
+        end,
+        ["List"] = {"Long","Funny","FunnyOld","Moonsoon","Bounce","Bounce2"},
+        ["Default"] = "Moonsoon"
     })
 end)
  
